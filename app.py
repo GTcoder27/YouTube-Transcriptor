@@ -12,14 +12,33 @@ CORS(app)
 # Extract plain transcript
 def get_clean_transcript(video_id, languages=None):
     try:
+        print(f"Attempting to get transcript for video: {video_id}")
+        print(f"Requested languages: {languages}")
+        
+        # Try to get the transcript
         transcript_response = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+        
+        print(f"Successfully retrieved transcript with {len(transcript_response)} segments")
+        
+        # Clean and join the transcript
         transcript_text = ' '.join([snippet['text'] for snippet in transcript_response])
         transcript_text = ' '.join(transcript_text.split())
-        used_language = transcript_response[0].get('language', 'unknown')
+        
+        # Get the language that was actually used
+        used_language = transcript_response[0].get('language', 'unknown') if transcript_response else 'unknown'
+        
+        print(f"Used language: {used_language}")
+        print(f"Transcript length: {len(transcript_text)} characters")
+        
         return transcript_text, used_language
+        
+    except TranscriptsDisabled as e:
+        print(f"Transcripts disabled for video {video_id}: {e}")
+        return None, f"transcripts_disabled: {str(e)}"
+        
     except Exception as e:
-        print(f"Error fetching transcript: {e}")
-        return None, None
+        print(f"Error fetching transcript for {video_id}: {type(e).__name__}: {e}")
+        return None, f"error: {type(e).__name__}: {str(e)}"
 
 # Extract video ID from URL
 def extract_video_id(url):
@@ -93,9 +112,12 @@ def get_transcript():
                 }), 400
             languages = [lang_query] if lang_query else None
 
+        print(f"Processing request - URL: {youtube_url}, Languages: {languages}")
+
         # Extract video ID
         try:
             video_id = extract_video_id(youtube_url)
+            print(f"Extracted video ID: {video_id}")
         except ValueError as e:
             return jsonify({
                 "error": f"Invalid YouTube URL: {str(e)}",
@@ -109,32 +131,41 @@ def get_transcript():
             }), 400
 
         # Get transcript
-        transcript, lang_used = get_clean_transcript(video_id, languages=languages)
+        transcript, error_or_lang = get_clean_transcript(video_id, languages=languages)
+        
         if transcript:
             return jsonify({
                 "success": True,
                 "video_id": video_id,
                 "url": youtube_url,
-                "language_used": lang_used,
+                "language_used": error_or_lang,
                 "transcript": transcript,
                 "length": len(transcript),
                 "word_count": len(transcript.split())
             })
         else:
+            # More detailed error response
             return jsonify({
                 "error": "Failed to fetch transcript",
                 "video_id": video_id,
+                "url": youtube_url,
+                "requested_languages": languages,
+                "detailed_error": error_or_lang,
                 "possible_reasons": [
                     "Video doesn't have captions/subtitles",
                     "Captions are disabled",
                     "Video is private or doesn't exist",
-                    "Video has auto-generated captions in unsupported language"
-                ]
+                    "Requested language not available",
+                    "Auto-generated captions in unsupported language"
+                ],
+                "suggestion": f"Try checking available languages at: /languages/{video_id}"
             }), 404
 
     except Exception as e:
+        print(f"Server error in get_transcript: {type(e).__name__}: {e}")
         return jsonify({
-            "error": f"Server error: {str(e)}"
+            "error": f"Server error: {str(e)}",
+            "error_type": type(e).__name__
         }), 500
 
 # Health check
