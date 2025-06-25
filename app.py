@@ -1,6 +1,9 @@
+# Updated app.py - Production Ready
+
 from flask import Flask, request, jsonify
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 import re
+import os
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -42,6 +45,7 @@ def home():
     return jsonify({
         "message": "YouTube Transcript API Server",
         "version": "1.1",
+        "status": "Production Ready",
         "endpoints": {
             "GET /": "This documentation",
             "POST /transcript": "Get transcript from YouTube URL",
@@ -56,11 +60,11 @@ def home():
                     "url": "https://youtu.be/VIDEO_ID",
                     "languages": ["hi", "en"]
                 },
-                "example": "curl -X POST -H 'Content-Type: application/json' -d '{\"url\":\"https://youtu.be/dQw4w9WgXcQ\", \"languages\": [\"hi\", \"en\"]}' http://localhost:5000/transcript"
+                "example": "curl -X POST -H 'Content-Type: application/json' -d '{\"url\":\"https://youtu.be/dQw4w9WgXcQ\", \"languages\": [\"hi\", \"en\"]}' https://your-app.railway.app/transcript"
             },
             "GET /transcript": {
                 "method": "GET",
-                "example": "http://localhost:5000/transcript?url=https://youtu.be/dQw4w9WgXcQ&lang=hi"
+                "example": "https://your-app.railway.app/transcript?url=https://youtu.be/dQw4w9WgXcQ&lang=hi"
             }
         }
     })
@@ -138,7 +142,8 @@ def get_transcript():
 def health_check():
     return jsonify({
         "status": "healthy",
-        "service": "YouTube Transcript API"
+        "service": "YouTube Transcript API",
+        "port": os.environ.get('PORT', 'Not set')
     })
 
 # Get list of available transcript languages
@@ -160,8 +165,8 @@ def available_languages(video_id):
     except Exception as e:
         return jsonify({"error": f"Could not retrieve languages: {str(e)}"}), 500
 
-# Start server
+# Start server - Production Ready
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)
