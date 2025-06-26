@@ -2,6 +2,7 @@
 
 from flask import Flask, request, jsonify
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from youtube_transcript_api.proxies import WebshareProxyConfig
 import re
 import os
 from flask_cors import CORS
@@ -16,7 +17,16 @@ def get_clean_transcript(video_id, languages=None):
         print(f"Requested languages: {languages}")
         
         # Try to get the transcript
-        transcript_response = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+        ytt_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username="dpdtdufj",
+                proxy_password="fertioyr1pll",
+            )
+        )
+
+        # all requests done by ytt_api will now be proxied through Webshare
+
+        transcript_response = ytt_api.get_transcript(video_id, languages=languages)
         
         print(f"Successfully retrieved transcript with {len(transcript_response)} segments")
         
