@@ -1,4 +1,4 @@
-# Updated app.py - Production Ready
+# Updated app.py - Production Ready with Proxy Support
 
 from flask import Flask, request, jsonify
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
@@ -10,22 +10,38 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# Initialize the API with proxy configuration
+def get_youtube_api():
+    """Initialize YouTube Transcript API with proxy configuration"""
+    try:
+        # Get proxy credentials from environment variables (recommended for production)
+        proxy_username = os.environ.get('WEBSHARE_PROXY_USERNAME', 'dpdtdufj')
+        proxy_password = os.environ.get('WEBSHARE_PROXY_PASSWORD', 'fertioyr1pll')
+        
+        if proxy_username and proxy_password:
+            print("Initializing YouTube API with proxy configuration")
+            proxy_config = WebshareProxyConfig(
+                proxy_username=proxy_username,
+                proxy_password=proxy_password,
+            )
+            return YouTubeTranscriptApi(proxy_config=proxy_config)
+        else:
+            print("Warning: No proxy credentials found, using direct connection")
+            return YouTubeTranscriptApi()
+    except Exception as e:
+        print(f"Error initializing YouTube API: {e}")
+        return YouTubeTranscriptApi()  # Fallback to direct connection
+
 # Extract plain transcript
 def get_clean_transcript(video_id, languages=None):
     try:
         print(f"Attempting to get transcript for video: {video_id}")
         print(f"Requested languages: {languages}")
         
-        # Try to get the transcript
-        ytt_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username="dpdtdufj",
-                proxy_password="fertioyr1pll",
-            )
-        )
-
-        # all requests done by ytt_api will now be proxied through Webshare
-
+        # Initialize API with proxy
+        ytt_api = get_youtube_api()
+        
+        # Get the transcript using the proxied API
         transcript_response = ytt_api.get_transcript(video_id, languages=languages)
         
         print(f"Successfully retrieved transcript with {len(transcript_response)} segments")
@@ -73,13 +89,15 @@ def extract_video_id(url):
 def home():
     return jsonify({
         "message": "YouTube Transcript API Server",
-        "version": "1.1",
-        "status": "Production Ready",
+        "version": "1.2",
+        "status": "Production Ready with Proxy Support",
+        "proxy_status": "Enabled" if os.environ.get('WEBSHARE_PROXY_USERNAME') else "Disabled",
         "endpoints": {
             "GET /": "This documentation",
             "POST /transcript": "Get transcript from YouTube URL",
             "GET /transcript": "Get transcript from YouTube URL (via query parameter)",
-            "GET /languages/<video_id>": "Get available transcript languages for a video"
+            "GET /languages/<video_id>": "Get available transcript languages for a video",
+            "GET /health": "Health check endpoint"
         },
         "usage": {
             "POST /transcript": {
@@ -95,6 +113,12 @@ def home():
                 "method": "GET",
                 "example": "https://your-app.railway.app/transcript?url=https://youtu.be/dQw4w9WgXcQ&lang=hi"
             }
+        },
+        "environment_variables": {
+            "WEBSHARE_PROXY_USERNAME": "Your Webshare proxy username",
+            "WEBSHARE_PROXY_PASSWORD": "Your Webshare proxy password",
+            "PORT": "Server port (default: 5000)",
+            "FLASK_DEBUG": "Debug mode (default: False)"
         }
     })
 
@@ -151,7 +175,8 @@ def get_transcript():
                 "language_used": error_or_lang,
                 "transcript": transcript,
                 "length": len(transcript),
-                "word_count": len(transcript.split())
+                "word_count": len(transcript.split()),
+                "proxy_used": bool(os.environ.get('WEBSHARE_PROXY_USERNAME'))
             })
         else:
             # More detailed error response
@@ -166,7 +191,8 @@ def get_transcript():
                     "Captions are disabled",
                     "Video is private or doesn't exist",
                     "Requested language not available",
-                    "Auto-generated captions in unsupported language"
+                    "Auto-generated captions in unsupported language",
+                    "IP blocked (try setting up proxy credentials)"
                 ],
                 "suggestion": f"Try checking available languages at: /languages/{video_id}"
             }), 404
@@ -184,22 +210,29 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "YouTube Transcript API",
-        "port": os.environ.get('PORT', 'Not set')
+        "port": os.environ.get('PORT', 'Not set'),
+        "proxy_configured": bool(os.environ.get('WEBSHARE_PROXY_USERNAME')),
+        "version": "1.2"
     })
 
 # Get list of available transcript languages
 @app.route('/languages/<video_id>')
 def available_languages(video_id):
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # Use the proxied API for language listing as well
+        ytt_api = get_youtube_api()
+        transcript_list = ytt_api.list_transcripts(video_id)
+        
         available = [{
             "language": t.language,
             "language_code": t.language_code,
             "is_generated": t.is_generated
         } for t in transcript_list]
+        
         return jsonify({
             "video_id": video_id,
-            "available_languages": available
+            "available_languages": available,
+            "proxy_used": bool(os.environ.get('WEBSHARE_PROXY_USERNAME'))
         })
     except TranscriptsDisabled:
         return jsonify({"error": "Transcripts are disabled for this video"}), 403
@@ -210,4 +243,13 @@ def available_languages(video_id):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    # Print startup information
+    print("=" * 50)
+    print("YouTube Transcript API Server Starting...")
+    print(f"Port: {port}")
+    print(f"Debug Mode: {debug_mode}")
+    print(f"Proxy Configured: {bool(os.environ.get('WEBSHARE_PROXY_USERNAME'))}")
+    print("=" * 50)
+    
     app.run(debug=debug_mode, host='0.0.0.0', port=port)
